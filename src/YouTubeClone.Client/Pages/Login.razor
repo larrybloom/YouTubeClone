@@ -1,0 +1,123 @@
+@page "/login"
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Login - YouTube Clone</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Login</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger">
+                                @errorMessage
+                            </div>
+                        }
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <InputText id="email" class="form-control" @bind-Value="loginRequest.Email" placeholder="Enter your email" />
+                            <ValidationMessage For="@(() => loginRequest.Email)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <InputText id="password" type="password" class="form-control" @bind-Value="loginRequest.Password" placeholder="Enter your password" />
+                            <ValidationMessage For="@(() => loginRequest.Password)" />
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <InputCheckbox id="rememberMe" class="form-check-input" @bind-Value="loginRequest.RememberMe" />
+                            <label class="form-check-label" for="rememberMe">
+                                Remember me
+                            </label>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                Login
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    <hr />
+
+                    <div class="text-center">
+                        <p>Don't have an account? <a href="/register">Register here</a></p>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-danger" @onclick="LoginWithGoogle" disabled="@isLoading">
+                            <i class="bi bi-google"></i> Login with Google
+                        </button>
+                        <button class="btn btn-outline-primary" @onclick="LoginWithMicrosoft" disabled="@isLoading">
+                            <i class="bi bi-microsoft"></i> Login with Microsoft
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginRequest loginRequest = new();
+    private string errorMessage = "";
+    private bool isLoading = false;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = "";
+
+        try
+        {
+            var result = await AuthService.LoginAsync(loginRequest);
+            
+            if (result.IsSuccess)
+            {
+                var authStateProvider = (CustomAuthenticationStateProvider)AuthenticationStateProvider;
+                await authStateProvider.MarkUserAsAuthenticated();
+                NavigationManager.NavigateTo("/", true);
+            }
+            else
+            {
+                errorMessage = result.ErrorMessage ?? "Login failed";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoginWithGoogle()
+    {
+        // Implement Google OAuth login
+        errorMessage = "Google login not implemented yet";
+    }
+
+    private async Task LoginWithMicrosoft()
+    {
+        // Implement Microsoft OAuth login
+        errorMessage = "Microsoft login not implemented yet";
+    }
+}

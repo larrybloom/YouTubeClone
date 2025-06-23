@@ -1,0 +1,161 @@
+@page "/watch/{VideoId}"
+@using YouTubeClone.Client.Services
+@using YouTubeClone.Shared.DTOs
+@inject IVideoService VideoService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Watch Video - YouTube Clone</PageTitle>
+
+<div class="container-fluid mt-4">
+    @if (video == null)
+    {
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="ratio ratio-16x9 mb-4">
+                    <iframe 
+                        src="@GetYouTubeEmbedUrl(video.Id)" 
+                        title="@video.Title"
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen>
+                    </iframe>
+                </div>
+
+                <h4>@video.Title</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <span class="text-muted">@video.ViewCount.ToString("N0") views • @video.PublishedAt.ToString("MMM dd, yyyy")</span>
+                    </div>
+                    <div>
+                        <button class="btn btn-outline-primary me-2" @onclick="() => LikeVideo(video.Id)">
+                            <i class="bi bi-hand-thumbs-up"></i> @video.LikeCount.ToString("N0")
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2">@video.ChannelTitle</h6>
+                        <p class="card-text">@video.Description</p>
+                        @if (video.Tags.Any())
+                        {
+                            <div class="mt-2">
+                                @foreach (var tag in video.Tags.Take(5))
+                                {
+                                    <span class="badge bg-secondary me-1">#@tag</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                @if (relatedVideos != null && relatedVideos.Any())
+                {
+                    <h5 class="mb-3">Related Videos</h5>
+                    @foreach (var relatedVideo in relatedVideos)
+                    {
+                        <div class="card mb-3" style="cursor: pointer;" @onclick="() => NavigateToVideo(relatedVideo.Id)">
+                            <div class="row g-0">
+                                <div class="col-4">
+                                    <img src="@relatedVideo.ThumbnailUrl" class="img-fluid rounded-start" alt="@relatedVideo.Title">
+                                </div>
+                                <div class="col-8">
+                                    <div class="card-body py-2">
+                                        <h6 class="card-title mb-1" style="font-size: 0.9rem;">@relatedVideo.Title</h6>
+                                        <p class="card-text"><small class="text-muted">@relatedVideo.ChannelTitle</small></p>
+                                        <p class="card-text"><small class="text-muted">@relatedVideo.ViewCount.ToString("N0") views</small></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="alert alert-info">
+                        No related videos available.
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string VideoId { get; set; } = string.Empty;
+
+    private YouTubeVideoDto? video;
+    private List<YouTubeVideoDto> relatedVideos = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadVideoData();
+    }
+
+    private async Task LoadVideoData()
+    {
+        try
+        {
+            // Since there's no GetVideoByIdAsync, we'll search for the specific video
+            var searchRequest = new YouTubeSearchRequest
+            {
+                Query = VideoId,
+                MaxResults = 1,
+                Type = "video"
+            };
+            var searchResponse = await VideoService.SearchVideosAsync(searchRequest);
+            video = searchResponse.Videos.FirstOrDefault();
+
+            // Load related videos using a general search
+            if (video != null)
+            {
+                var relatedRequest = new YouTubeSearchRequest
+                {
+                    Query = video.ChannelTitle,
+                    MaxResults = 10,
+                    Type = "video"
+                };
+                var relatedResponse = await VideoService.SearchVideosAsync(relatedRequest);
+                relatedVideos = relatedResponse.Videos.Where(v => v.Id != VideoId).Take(8).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading video: {ex.Message}");
+        }
+    }
+
+    private async Task LikeVideo(string videoId)
+    {
+        try
+        {
+            await VideoService.ToggleVideoLikeAsync(videoId, true);
+            // Note: Like count won't update immediately since we're using YouTube API data
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error liking video: {ex.Message}");
+        }
+    }
+
+    private void NavigateToVideo(string videoId)
+    {
+        NavigationManager.NavigateTo($"/watch/{videoId}");
+    }
+
+    private string GetYouTubeEmbedUrl(string videoId)
+    {
+        return $"https://www.youtube.com/embed/{videoId}";
+    }
+}

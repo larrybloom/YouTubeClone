@@ -1,0 +1,228 @@
+@page "/upload"
+@attribute [Authorize]
+@inject IVideoService VideoService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Upload Video - YouTube Clone</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Upload Video</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="uploadRequest" OnValidSubmit="HandleUpload">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger">
+                                @errorMessage
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(successMessage))
+                        {
+                            <div class="alert alert-success">
+                                @successMessage
+                            </div>
+                        }
+
+                        <div class="mb-4">
+                            <label class="form-label">Video File</label>
+                            <InputFile OnChange="OnFileSelected" class="form-control" accept="video/*" />
+                            <small class="form-text text-muted">
+                                Maximum file size: 1GB. Supported formats: MP4, WebM, MOV.
+                            </small>
+                            @if (uploadProgress > 0 && uploadProgress < 100)
+                            {
+                                <div class="progress mt-2">
+                                    <div class="progress-bar" role="progressbar" style="width: @uploadProgress%">
+                                        @uploadProgress%
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <InputText id="title" class="form-control" @bind-Value="uploadRequest.Title" placeholder="Enter video title" />
+                            <ValidationMessage For="@(() => uploadRequest.Title)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <InputTextArea id="description" class="form-control" @bind-Value="uploadRequest.Description" rows="4" placeholder="Enter video description" />
+                            <ValidationMessage For="@(() => uploadRequest.Description)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="tags" class="form-label">Tags</label>
+                            <InputText id="tags" class="form-control" @bind-Value="uploadRequest.Tags" placeholder="Enter tags (comma separated)" />
+                            <small class="form-text text-muted">
+                                Separate tags with commas, e.g., "music, rock, live"
+                            </small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="visibility" class="form-label">Visibility</label>
+                            <InputSelect id="visibility" class="form-select" @bind-Value="uploadRequest.Visibility">
+                                <option value="Public">Public</option>
+                                <option value="Unlisted">Unlisted</option>
+                                <option value="Private">Private</option>
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <InputCheckbox id="allowComments" class="form-check-input" @bind-Value="uploadRequest.AllowComments" />
+                            <label class="form-check-label" for="allowComments">
+                                Allow comments
+                            </label>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary" disabled="@(isUploading || selectedFile == null)">
+                                @if (isUploading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    <span>Uploading...</span>
+                                }
+                                else
+                                {
+                                    <span>Upload Video</span>
+                                }
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CancelUpload" disabled="@(!isUploading)">
+                                Cancel
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private VideoUploadRequest uploadRequest = new();
+    private IBrowserFile? selectedFile;
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isUploading = false;
+    private int uploadProgress = 0;
+    private CancellationTokenSource? cancellationTokenSource;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        errorMessage = "";
+        successMessage = "";
+
+        if (selectedFile.Size > 1024 * 1024 * 1024) // 1GB
+        {
+            errorMessage = "File size exceeds the maximum limit of 1GB.";
+            selectedFile = null;
+            return;
+        }
+
+        var allowedTypes = new[] { "video/mp4", "video/webm", "video/quicktime" };
+        if (!allowedTypes.Contains(selectedFile.ContentType))
+        {
+            errorMessage = "Invalid file type. Please upload MP4, WebM, or MOV files.";
+            selectedFile = null;
+            return;
+        }
+    }
+
+    private async Task HandleUpload()
+    {
+        if (selectedFile == null)
+            return;
+
+        isUploading = true;
+        errorMessage = "";
+        successMessage = "";
+        uploadProgress = 0;
+        cancellationTokenSource = new CancellationTokenSource();
+
+        try
+        {
+            var content = new MultipartFormDataContent();
+
+            // Add file content
+            var fileContent = new StreamContent(selectedFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024));
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(selectedFile.ContentType);
+            content.Add(fileContent, "file", selectedFile.Name);
+
+            // Add other form data
+            content.Add(new StringContent(uploadRequest.Title), "title");
+            content.Add(new StringContent(uploadRequest.Description ?? ""), "description");
+            content.Add(new StringContent(uploadRequest.Tags ?? ""), "tags");
+            content.Add(new StringContent(uploadRequest.Visibility), "visibility");
+            content.Add(new StringContent(uploadRequest.AllowComments.ToString()), "allowComments");
+
+            var result = await VideoService.UploadVideoAsync(content);
+
+            if (result.IsSuccess)
+            {
+                successMessage = "Video uploaded successfully!";
+                uploadRequest = new VideoUploadRequest();
+                selectedFile = null;
+                await Task.Delay(2000); // Show success message for 2 seconds
+                NavigationManager.NavigateTo($"/watch/{result.VideoId}");
+            }
+            else
+            {
+                errorMessage = result.ErrorMessage ?? "Upload failed";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            errorMessage = "Upload cancelled";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+            uploadProgress = 0;
+            cancellationTokenSource?.Dispose();
+            cancellationTokenSource = null;
+        }
+    }
+
+    private void CancelUpload()
+    {
+        cancellationTokenSource?.Cancel();
+    }
+
+    public void Dispose()
+    {
+        cancellationTokenSource?.Dispose();
+    }
+}
+
+@functions {
+    public class VideoUploadRequest
+    {
+        [Required(ErrorMessage = "Title is required")]
+        [StringLength(100, ErrorMessage = "Title must be between 3 and 100 characters", MinimumLength = 3)]
+        public string Title { get; set; } = "";
+
+        [StringLength(5000, ErrorMessage = "Description cannot exceed 5000 characters")]
+        public string? Description { get; set; }
+
+        public string? Tags { get; set; }
+
+        [Required(ErrorMessage = "Visibility setting is required")]
+        public string Visibility { get; set; } = "Public";
+
+        public bool AllowComments { get; set; } = true;
+    }
+}
